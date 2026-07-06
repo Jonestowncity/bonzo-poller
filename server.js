@@ -107,17 +107,20 @@ async function fetchBonzoProspects(sinceISO, perPage = 50) {
 // ─── Lead Mapping ─────────────────────────────────────────────────────────────
 function mapProspectToLeadPayload(p) {
   const bonzoId = String(p.id || "").trim();
+  const m = p.mortgage || {};
   const co = p.coborrower || {};
 
   const notesParts = [];
-  if (s(p, "bankruptcy")) notesParts.push(`Bankruptcy: ${s(p, "bankruptcy")} ${s(p, "bankruptcy_details")}`);
-  if (s(p, "foreclosure")) notesParts.push(`Foreclosure: ${s(p, "foreclosure")}`);
-  if (s(p, "occupation")) notesParts.push(`Occupation: ${s(p, "occupation")}`);
-  if (s(p, "lender")) notesParts.push(`Current Lender: ${s(p, "lender")}`);
+  if (m.bankruptcy) notesParts.push(`Bankruptcy: Yes${m.bankruptcy_details ? " (" + m.bankruptcy_details + ")" : ""}`);
+  if (m.foreclosure) notesParts.push(`Foreclosure: Yes${m.foreclosure_details ? " (" + m.foreclosure_details + ")" : ""}`);
+  if (s(m, "occupation")) notesParts.push(`Occupation: ${s(m, "occupation")}`);
+  if (s(m, "lender")) notesParts.push(`Current Lender: ${s(m, "lender")}`);
   if (co.first_name) {
     notesParts.push(`Co-Borrower: ${co.first_name || ""} ${co.last_name || ""} | ${co.email || ""} | ${co.phone || ""}`);
   }
 
+  // NOTE: Bonzo nests almost all mortgage/property data under prospect.mortgage.
+  // Only name/email/phone/address/city/state/zip live at the top level.
   return {
     secret: POLLER_SHARED_SECRET,
     prospect: {
@@ -131,22 +134,22 @@ function mapProspectToLeadPayload(p) {
       city: s(p, "city"),
       state: s(p, "state"),
       zip: s(p, "zip"),
-      loan_amount: n(p, "loan_amount"),
-      loan_type: s(p, "loan_type"),
-      loan_request: s(p, "loan_purpose"),
-      down_payment: n(p, "down_payment"),
-      purchase_price: n(p, "purchase_price"),
-      property_value: n(p, "property_value"),
-      cash_out_amount: n(p, "cash_out_amount"),
-      credit_rating: s(p, "credit_score"),
-      property_type: s(p, "property_type"),
-      property_use: s(p, "property_use"),
-      property_address: s(p, "property_address"),
-      property_city: s(p, "property_city"),
-      property_state: s(p, "property_state"),
-      property_zip: s(p, "property_zip"),
-      lead_source: s(p, "lead_source"),
-      application_date: s(p, "application_date"),
+      loan_amount: n(m, "loan_amount"),
+      loan_type: s(m, "loan_type"),
+      loan_request: s(m, "loan_purpose"),
+      down_payment: n(m, "down_payment"),
+      purchase_price: n(m, "purchase_price"),
+      property_value: n(m, "property_value"),
+      cash_out_amount: n(m, "cash_out_amount"),
+      credit_rating: s(m, "credit_score"),
+      property_type: s(m, "property_type"),
+      property_use: s(m, "property_use"),
+      property_address: s(m, "property_address"),
+      property_city: s(m, "property_city"),
+      property_state: s(m, "property_state"),
+      property_zip: s(m, "property_zip"),
+      lead_source: s(m, "lead_source") || s(p, "source"),
+      application_date: s(m, "application_date") || s(p, "created_at"),
       notes: notesParts.join(" | "),
       status: "New",
       raw_data: p,
