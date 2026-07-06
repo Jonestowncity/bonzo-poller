@@ -150,6 +150,10 @@ function mapProspectToLeadPayload(p) {
       property_zip: s(m, "property_zip"),
       lead_source: s(m, "lead_source") || s(p, "source"),
       application_date: s(m, "application_date") || s(p, "created_at"),
+      // lead_created_at = the TRUE date this prospect was created in Bonzo (source of truth
+      // for lead age/sorting) — distinct from InstaFi's own created_date/updated_date, which
+      // just reflect when the poller happened to sync the record.
+      lead_created_at: s(p, "created_at") || s(m, "application_date"),
       notes: notesParts.join(" | "),
       status: "New",
       raw_data: p,
