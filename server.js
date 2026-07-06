@@ -228,21 +228,51 @@ async function pollCycle() {
   }
 }
 
-// ─── Initial Cache Load ───────────────────────────────────────────────────────
+// ─── Initial Cache Load / Backfill ────────────────────────────────────────────
+// IMPORTANT: this does NOT just mark IDs as "seen" — it actually pushes/upserts
+// every prospect from the lookback window to InstaFi. receivePollerLead.ts is
+// idempotent (create-or-update by leadmailbox_id), so this is safe to re-run on
+// every restart. This guarantees that if a prospect's push previously failed
+// (Bonzo 502s, mapping bugs, transient InstaFi errors, etc.) it gets retried
+// and corrected here instead of being silently marked "synced" without ever
+// actually landing in InstaFi.
 async function loadInitialCache() {
-  log("INFO", `Loading initial cache: all Bonzo prospects from last ${INIT_LOOKBACK_DAYS} days...`);
+  log("INFO", `Backfilling: all Bonzo prospects from last ${INIT_LOOKBACK_DAYS} days...`);
   try {
     const since = new Date(Date.now() - INIT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const prospects = await fetchBonzoProspects(since, 100);
 
+    let pushed = 0;
+    let failed = 0;
+
     for (const p of prospects) {
       const bonzoId = String(p.id || "").trim();
-      if (bonzoId) syncedIds.add(bonzoId);
+      if (!bonzoId) continue;
+
+      const first = s(p, "first_name");
+      const last = s(p, "last_name");
+      if (!first && !last) {
+        syncedIds.add(bonzoId);
+        continue;
+      }
+
+      try {
+        const payload = mapProspectToLeadPayload(p);
+        await pushLeadToInstaFi(payload);
+        syncedIds.add(bonzoId);
+        pushed++;
+      } catch (err) {
+        failed++;
+        log("ERROR", `Backfill failed for bonzo_${bonzoId}: ${err["message"]}`);
+        // Do NOT add to syncedIds on failure — let the regular poll cycle retry it
+        // if it falls within the 3-min lookback, otherwise it stays uncached and
+        // will be retried on the NEXT restart's backfill.
+      }
     }
 
-    log("INFO", `Initial cache loaded: ${syncedIds.size} prospects cached. Will only sync NEW ones.`);
+    log("INFO", `Backfill complete: ${pushed} pushed/updated, ${failed} failed, ${syncedIds.size} cached.`);
   } catch (err) {
-    log("ERROR", `Initial cache load failed: ${err["message"]} — will start with empty cache`);
+    log("ERROR", `Backfill failed: ${err["message"]} — will start with empty cache`);
   }
 }
 
