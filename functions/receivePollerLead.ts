@@ -5,6 +5,10 @@ const receivePollerLead = async (req, res) => {
    *
    * Auth: x-poller-key header must match POLLER_SHARED_SECRET
    * Body: { secret: "...", prospect: { ...mapped fields... } }
+   *
+   * IMPORTANT: on UPDATE, we never touch "status" — that field is manually
+   * managed by loan officers in InstaFi (New -> Contacted -> Closed, etc.)
+   * and must not be reset back to "New" every time the poller re-syncs/backfills.
    */
   try {
     const expectedSecret = "bm44-int-k3y-x9f2p7q1r8w5";
@@ -29,7 +33,7 @@ const receivePollerLead = async (req, res) => {
       leadmailbox_id: leadKey,
     });
 
-    const leadData = {
+    const leadDataBase = {
       leadmailbox_id: leadKey,
       first_name: prospect["first_name"] || "",
       last_name: prospect["last_name"] || "",
@@ -56,14 +60,13 @@ const receivePollerLead = async (req, res) => {
       lead_source: prospect["lead_source"] || "Bonzo",
       application_date: prospect["application_date"] || "",
       notes: prospect["notes"] || "",
-      status: prospect["status"] || "New",
       raw_data: prospect["raw_data"] || prospect,
     };
 
     if (existing && existing["length"] > 0) {
-      // Update existing lead
+      // Update existing lead — never touch status, it's owner-managed
       const leadId = existing[0]["id"];
-      const updated = await base44["entities"]["Lead"]["update"](leadId, leadData);
+      await base44["entities"]["Lead"]["update"](leadId, leadDataBase);
       return res["status"](200)["json"]({
         ok: true,
         action: "updated",
@@ -72,8 +75,11 @@ const receivePollerLead = async (req, res) => {
       });
     }
 
-    // Create new lead
-    const created = await base44["entities"]["Lead"]["create"](leadData);
+    // Create new lead — status defaults to "New"
+    const created = await base44["entities"]["Lead"]["create"]({
+      ...leadDataBase,
+      status: prospect["status"] || "New",
+    });
     return res["status"](200)["json"]({
       ok: true,
       action: "created",
@@ -89,3 +95,5 @@ const receivePollerLead = async (req, res) => {
     });
   }
 };
+
+export default receivePollerLead;
